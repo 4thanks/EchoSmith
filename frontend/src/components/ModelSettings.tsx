@@ -15,7 +15,6 @@ import { Progress } from "./ui/progress";
 
 export function ModelSettings() {
   const [models, setModels] = useState<ModelEntry[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [updates, setUpdates] = useState<ModelUpdate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -134,16 +133,6 @@ export function ModelSettings() {
       const withDetail = err as { response?: { data?: { detail?: string } }; message?: string };
       setActionMessage(withDetail.response?.data?.detail || "卸载失败");
     }
-  };
-
-  const formatSize = (bytes: number) => {
-    if (bytes > 1024 * 1024 * 1024) {
-      return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
-    }
-    if (bytes > 1024 * 1024) {
-      return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-    }
-    return `${(bytes / 1024).toFixed(1)} KB`;
   };
 
   if (loading) {
