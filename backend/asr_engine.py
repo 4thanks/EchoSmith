@@ -16,9 +16,9 @@ import numpy as np
 import sherpa_onnx
 
 try:
-    from .model_registry import ModelRegistry, get_registry
+    from .model_registry import get_registry
 except ImportError:
-    from model_registry import ModelRegistry, get_registry
+    from model_registry import get_registry
 
 
 def _subprocess_kwargs() -> dict:

@@ -11,12 +11,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import platform
 import shutil
 import tempfile
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -43,19 +41,6 @@ DEFAULT_MODEL_URLS: dict[str, str] = {
 }
 
 DownloadProgressCallback = Callable[[float, str], None]
-
-
-@dataclass
-class DownloadTask:
-    """Tracks an in-progress download."""
-    model_id: str
-    version: str
-    url: str
-    dest_dir: Path
-    progress: float = 0.0
-    message: str = ""
-    status: str = "pending"  # pending, downloading, extracting, verifying, done, error
-    error: str = ""
 
 
 def sha256_file(path: Path) -> str:
