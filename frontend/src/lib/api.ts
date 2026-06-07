@@ -182,6 +182,97 @@ export async function triggerModelDownload(): Promise<{ status: ModelDownloadSta
   return response.data;
 }
 
+// ── Model Management API ──────────────────────────────────────────
+
+export interface ModelFile {
+  filename: string;
+  sha256: string;
+  size_bytes: number;
+}
+
+export interface ModelEntry {
+  id: string;
+  name: string;
+  version: string;
+  engine: string;
+  engine_version: string;
+  files: ModelFile[];
+  checksum: string;
+  remote_url: string;
+  remote_version: string;
+  installed: boolean;
+  active: boolean;
+  installed_at: number;
+  path: string;
+}
+
+export interface ModelRegistryResponse {
+  models: ModelEntry[];
+  active_id: string | null;
+}
+
+export interface ModelUpdate {
+  id: string;
+  name: string;
+  current_version: string | null;
+  remote_version: string;
+  status: "new" | "update_available";
+}
+
+export async function fetchModelRegistry(): Promise<ModelRegistryResponse> {
+  await ensureBackendBase();
+  const response = await apiClient.get<ModelRegistryResponse>("/models/registry");
+  return response.data;
+}
+
+export async function activateModel(modelId: string): Promise<{ status: string; model_id: string }> {
+  await ensureBackendBase();
+  const response = await apiClient.post<{ status: string; model_id: string }>("/models/activate", {
+    model_id: modelId,
+  });
+  return response.data;
+}
+
+export async function importLocalModel(
+  sourceDir: string,
+  modelId = "sensevoice-int8",
+  version = ""
+): Promise<{ status: string; model: ModelEntry }> {
+  await ensureBackendBase();
+  const response = await apiClient.post<{ status: string; model: ModelEntry }>("/models/import", {
+    source_dir: sourceDir,
+    model_id: modelId,
+    version,
+  });
+  return response.data;
+}
+
+export async function checkModelUpdates(): Promise<{ updates: ModelUpdate[]; error?: string }> {
+  await ensureBackendBase();
+  const response = await apiClient.post<{ updates: ModelUpdate[]; error?: string }>("/models/check-updates");
+  return response.data;
+}
+
+export async function downloadModelUpdate(
+  modelId: string,
+  url = "",
+  version = ""
+): Promise<{ status: string; model: ModelEntry }> {
+  await ensureBackendBase();
+  const response = await apiClient.post<{ status: string; model: ModelEntry }>("/models/download-update", {
+    model_id: modelId,
+    url,
+    version,
+  });
+  return response.data;
+}
+
+export async function uninstallModel(modelId: string): Promise<{ status: string; model_id: string }> {
+  await ensureBackendBase();
+  const response = await apiClient.delete<{ status: string; model_id: string }>(`/models/${modelId}`);
+  return response.data;
+}
+
 export async function listTasks(): Promise<TaskSnapshot[]> {
   await ensureBackendBase();
   const response = await apiClient.get<TaskSnapshot[]>("/tasks");

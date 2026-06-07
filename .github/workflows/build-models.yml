@@ -1,0 +1,113 @@
+name: Build & Release Models
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_type:
+        description: 'Model to build'
+        required: true
+        type: choice
+        options:
+          - all
+          - sensevoice-int8
+          - silero-vad
+        default: all
+      version_tag:
+        description: 'Version tag (e.g. 2024-07-17)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-models:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version_tag }}" ]; then
+            echo "model_version=${{ github.event.inputs.version_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "model_version=$(date +%Y-%m-%d)" >> $GITHUB_OUTPUT
+          fi
+          echo "Version: ${{ steps.version.outputs.model_version }}"
+
+      - name: Download SenseVoice INT8 model
+        if: github.event.inputs.model_type == 'all' || github.event.inputs.model_type == 'sensevoice-int8'
+        run: |
+          echo "Downloading SenseVoice INT8 model..."
+          python scripts/download_models.py /tmp/models/sensevoice-int8
+          ls -lh /tmp/models/sensevoice-int8/
+
+      - name: Download Silero VAD model
+        if: github.event.inputs.model_type == 'all' || github.event.inputs.model_type == 'silero-vad'
+        run: |
+          echo "Downloading Silero VAD model..."
+          mkdir -p /tmp/models/silero-vad
+          curl -L "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx" \
+            -o /tmp/models/silero-vad/silero_vad.onnx
+          ls -lh /tmp/models/silero-vad/
+
+      - name: Generate checksums and manifest
+        run: |
+          python scripts/release_models.py \
+            --models-dir /tmp/models \
+            --version "${{ steps.version.outputs.model_version }}" \
+            --output /tmp/release
+
+      - name: Create release archive (SenseVoice)
+        if: github.event.inputs.model_type == 'all' || github.event.inputs.model_type == 'sensevoice-int8'
+        run: |
+          cd /tmp/models
+          tar -cjf /tmp/release/sensevoice-int8-${{ steps.version.outputs.model_version }}.tar.bz2 \
+            -C sensevoice-int8 .
+
+      - name: Create release archive (Silero VAD)
+        if: github.event.inputs.model_type == 'all' || github.event.inputs.model_type == 'silero-vad'
+        run: |
+          cd /tmp/models
+          tar -cjf /tmp/release/silero-vad-${{ steps.version.outputs.model_version }}.tar.bz2 \
+            -C silero-vad .
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: models-v${{ steps.version.outputs.model_version }}
+          name: "Models v${{ steps.version.outputs.model_version }}"
+          body: |
+            Model release v${{ steps.version.outputs.model_version }}
+            
+            ## Available models
+            - **sensevoice-int8**: SenseVoice INT8 quantized model
+            - **silero-vad**: Silero Voice Activity Detection model
+            
+            ## Installation
+            Models can be updated via the EchoSmith settings page or by running:
+            ```bash
+            python scripts/download_models.py
+            ```
+          files: |
+            /tmp/release/manifest.json
+            /tmp/release/sensevoice-int8-*.tar.bz2
+            /tmp/release/silero-vad-*.tar.bz2
+            /tmp/release/checksums.txt
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up
+        if: always()
+        run: rm -rf /tmp/models /tmp/release

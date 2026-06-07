@@ -26,6 +26,12 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 try:
     from asr_engine import ASREngine
+    from model_registry import get_registry
+    from model_updater import (
+        check_updates,
+        download_model,
+        import_local_model,
+    )
     from task_store import TaskRecord, TaskStatus, task_store
     from url_downloader import (
         download_audio,
@@ -35,6 +41,12 @@ try:
     )
 except ImportError:
     from .asr_engine import ASREngine
+    from .model_registry import get_registry
+    from .model_updater import (
+        check_updates,
+        download_model,
+        import_local_model,
+    )
     from .task_store import TaskRecord, TaskStatus, task_store
     from .url_downloader import (
         download_audio,
@@ -132,6 +144,121 @@ async def trigger_model_download(_: None = Depends(verify_token)) -> JSONRespons
 
     asyncio.create_task(engine.ensure_model())
     return JSONResponse({"status": "started"})
+
+
+@app.get("/api/models/registry")
+async def list_models(_: None = Depends(verify_token)) -> JSONResponse:
+    """List all registered models."""
+    registry = get_registry()
+    models = registry.list_models()
+    return JSONResponse({
+        "models": [m.to_dict() for m in models],
+        "active_id": next((m.id for m in models if m.active), None),
+    })
+
+
+@app.post("/api/models/activate")
+async def activate_model(
+    request: Request,
+    _: None = Depends(verify_token),
+) -> JSONResponse:
+    """Set a model as the active one."""
+    body = await request.json()
+    model_id = body.get("model_id", "").strip()
+    if not model_id:
+        raise HTTPException(status_code=400, detail="model_id is required")
+
+    registry = get_registry()
+    entry = registry.get_model(model_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Model not found: {model_id}")
+    if not entry.installed:
+        raise HTTPException(status_code=400, detail=f"Model not installed: {model_id}")
+
+    registry.activate(model_id)
+    await engine.set_model(model_id)
+    return JSONResponse({"status": "activated", "model_id": model_id})
+
+
+@app.post("/api/models/import")
+async def import_model(
+    request: Request,
+    _: None = Depends(verify_token),
+) -> JSONResponse:
+    """Import a model from a local directory."""
+    body = await request.json()
+    source_dir = body.get("source_dir", "").strip()
+    model_id = body.get("model_id", "sensevoice-int8").strip()
+    version = body.get("version", "").strip()
+
+    if not source_dir:
+        raise HTTPException(status_code=400, detail="source_dir is required")
+
+    try:
+        entry = import_local_model(model_id, source_dir, version=version)
+        return JSONResponse({
+            "status": "imported",
+            "model": entry.to_dict(),
+        })
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.post("/api/models/check-updates")
+async def check_model_updates(
+    _: None = Depends(verify_token),
+) -> JSONResponse:
+    """Check for available model updates from remote manifest."""
+    try:
+        updates = check_updates()
+        return JSONResponse({"updates": updates})
+    except Exception as e:
+        return JSONResponse({"updates": [], "error": str(e)})
+
+
+@app.post("/api/models/download-update")
+async def download_model_update(
+    request: Request,
+    _: None = Depends(verify_token),
+) -> JSONResponse:
+    """Download a model update."""
+    body = await request.json()
+    model_id = body.get("model_id", "").strip()
+    url = body.get("url", "").strip()
+    version = body.get("version", "").strip()
+
+    if not model_id:
+        raise HTTPException(status_code=400, detail="model_id is required")
+
+    try:
+        entry = download_model(model_id, url=url, version=version)
+        # If this is the first model or no active model, activate it
+        registry = get_registry()
+        if not any(m.active for m in registry.list_models()):
+            registry.activate(model_id)
+        return JSONResponse({
+            "status": "downloaded",
+            "model": entry.to_dict(),
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.delete("/api/models/{model_id}")
+async def uninstall_model(
+    model_id: str,
+    _: None = Depends(verify_token),
+) -> JSONResponse:
+    """Uninstall a model."""
+    registry = get_registry()
+    entry = registry.get_model(model_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Model not found: {model_id}")
+    if entry.active:
+        raise HTTPException(status_code=400, detail="Cannot uninstall the active model")
+
+    registry.uninstall(model_id)
+    return JSONResponse({"status": "uninstalled", "model_id": model_id})
 
 
 @app.get("/api/tasks")

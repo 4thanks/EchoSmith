@@ -2,13 +2,22 @@
 """Download sherpa-onnx SenseVoice models for EchoSmith.
 
 Cross-platform compatible: Windows, macOS, Linux.
+
+Supports:
+- Direct download from sherpa-onnx releases
+- Registration to the new model registry
+- Legacy path compatibility
 """
 
+import hashlib
+import json
 import os
+import platform
 import sys
 import shutil
 import tarfile
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -24,6 +33,21 @@ IS_WINDOWS = sys.platform == "win32"
 
 # Silero VAD model
 SILERO_VAD_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
+
+# Model registry path (same as backend/model_registry.py)
+def _get_registry_path() -> Path:
+    if platform.system() == "Windows":
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA", "")
+        if base:
+            return Path(base) / "EchoSmith" / "models" / "registry.json"
+        return Path.home() / ".local" / "share" / "EchoSmith" / "models" / "registry.json"
+    elif platform.system() == "Darwin":
+        return Path.home() / "Library" / "Application Support" / "EchoSmith" / "models" / "registry.json"
+    else:
+        xdg = os.environ.get("XDG_DATA_HOME", "")
+        if xdg:
+            return Path(xdg) / "echosmith" / "models" / "registry.json"
+        return Path.home() / ".local" / "share" / "echosmith" / "models" / "registry.json"
 
 
 def check_bz2_support() -> bool:
@@ -221,6 +245,84 @@ def download_silero_vad(cache_root: Path) -> None:
     print(f"Silero VAD downloaded: {vad_path} ({vad_path.stat().st_size / 1024 / 1024:.1f} MB)")
 
 
+def sha256_file(path: Path) -> str:
+    """Compute SHA256 hex digest of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def update_model_registry(model_dir: Path, model_id: str = "sensevoice-int8") -> None:
+    """Register downloaded models in the model registry."""
+    registry_path = _get_registry_path()
+    print(f"\nUpdating model registry: {registry_path}")
+
+    # Load existing registry or create new
+    registry = {"version": 1, "models": []}
+    if registry_path.exists():
+        try:
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # Build file list
+    files = []
+    for fname in ["model.int8.onnx", "tokens.txt", "model.onnx", "silero_vad.onnx"]:
+        fp = model_dir / fname
+        if fp.exists():
+            files.append({
+                "filename": fname,
+                "sha256": sha256_file(fp),
+                "size_bytes": fp.stat().st_size,
+            })
+
+    # Compute overall checksum
+    checksum = hashlib.sha256()
+    for f in sorted(files, key=lambda x: x["filename"]):
+        fp = model_dir / f["filename"]
+        checksum.update(sha256_file(fp).encode())
+
+    # Create/update model entry
+    model_entry = {
+        "id": model_id,
+        "name": "SenseVoice INT8" if model_id == "sensevoice-int8" else model_id,
+        "version": "2024-07-17",
+        "engine": "sherpa-onnx",
+        "engine_version": "1.12.28",
+        "files": files,
+        "checksum": checksum.hexdigest(),
+        "remote_url": MODEL_URL_BZ2,
+        "remote_version": "",
+        "installed": True,
+        "active": True,  # Make it active if it's the only model
+        "installed_at": time.time(),
+        "path": str(model_dir),
+    }
+
+    # Update or add model
+    existing_idx = None
+    for i, m in enumerate(registry.get("models", [])):
+        if m.get("id") == model_id:
+            existing_idx = i
+            break
+
+    if existing_idx is not None:
+        registry["models"][existing_idx] = model_entry
+    else:
+        registry.setdefault("models", []).append(model_entry)
+
+    # If this is the only model, make it active
+    if len(registry["models"]) == 1:
+        model_entry["active"] = True
+
+    # Write registry
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps(registry, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"Registry updated: {model_id} v{model_entry['version']}")
+
+
 if __name__ == "__main__":
     # Default cache directory (platform-aware)
     default_cache = get_default_cache_dir()
@@ -234,6 +336,8 @@ if __name__ == "__main__":
     try:
         download_models(cache_dir)
         download_silero_vad(cache_dir.parent)
+        # Register models in the new registry
+        update_model_registry(cache_dir)
     except Exception as e:
         print(f"\n[ERROR] Error downloading models: {e}", file=sys.stderr)
         sys.exit(1)

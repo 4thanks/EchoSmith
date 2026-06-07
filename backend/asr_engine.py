@@ -15,6 +15,11 @@ from typing import Callable
 import numpy as np
 import sherpa_onnx
 
+try:
+    from .model_registry import ModelRegistry, get_registry
+except ImportError:
+    from model_registry import ModelRegistry, get_registry
+
 
 def _subprocess_kwargs() -> dict:
     """Return extra kwargs for subprocess.run() to work reliably on Windows.
@@ -38,20 +43,25 @@ def _subprocess_kwargs() -> dict:
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW  # 0x08000000
     return kwargs
 
-MODEL_CARD = "SenseVoice INT8 (sherpa-onnx)"
 
-# Default model directory (platform-aware, matches download_models.py)
-if platform.system() == "Windows":
-    _local_app_data = os.environ.get("LOCALAPPDATA", "")
-    if _local_app_data:
-        DEFAULT_MODEL_DIR = os.path.join(_local_app_data, "sherpa-onnx", "sense-voice")
-        DEFAULT_VAD_MODEL = os.path.join(_local_app_data, "sherpa-onnx", "silero_vad.onnx")
-    else:
-        DEFAULT_MODEL_DIR = os.path.expanduser("~/.cache/sherpa-onnx/sense-voice")
-        DEFAULT_VAD_MODEL = os.path.expanduser("~/.cache/sherpa-onnx/silero_vad.onnx")
-else:
-    DEFAULT_MODEL_DIR = os.path.expanduser("~/.cache/sherpa-onnx/sense-voice")
-    DEFAULT_VAD_MODEL = os.path.expanduser("~/.cache/sherpa-onnx/silero_vad.onnx")
+def _legacy_model_dir() -> Path:
+    """Legacy model directory from older EchoSmith versions."""
+    if platform.system() == "Windows":
+        _local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if _local_app_data:
+            return Path(_local_app_data) / "sherpa-onnx" / "sense-voice"
+        return Path.home() / ".cache" / "sherpa-onnx" / "sense-voice"
+    return Path.home() / ".cache" / "sherpa-onnx" / "sense-voice"
+
+
+def _legacy_vad_path() -> Path:
+    """Legacy Silero VAD model path."""
+    if platform.system() == "Windows":
+        _local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if _local_app_data:
+            return Path(_local_app_data) / "sherpa-onnx" / "silero_vad.onnx"
+        return Path.home() / ".cache" / "sherpa-onnx" / "silero_vad.onnx"
+    return Path.home() / ".cache" / "sherpa-onnx" / "silero_vad.onnx"
 
 # Model download progress callback
 ModelDownloadCallback = Callable[[str, float, str], None]
@@ -129,7 +139,7 @@ class ASREngine:
 
     def __init__(
         self,
-        model_dir: str = DEFAULT_MODEL_DIR,
+        model_dir: str = "",
         download_callback: ModelDownloadCallback | None = None,
         num_threads: int = 0,
         use_int8: bool = True,
@@ -146,19 +156,40 @@ class ASREngine:
         self._num_threads = num_threads or self._default_num_threads()
         self._use_int8 = use_int8
         self._language = language if language in self.SUPPORTED_LANGUAGES else "zh"
+        self._registry = get_registry()
 
     def get_model_cache_dir(self) -> str:
-        """Get the directory where models will be cached."""
+        """Get the directory where models will be cached.
+
+        Priority:
+        1. Active model from registry
+        2. PyInstaller bundled models
+        3. Legacy ~/.cache/sherpa-onnx/sense-voice/
+        4. Fallback to _model_dir
+        """
         import sys
 
-        # If running from PyInstaller bundle, use bundled models
+        # 1. Check active model in registry
+        active = self._registry.get_active()
+        if active:
+            model_dir = active.model_dir()
+            if model_dir.exists():
+                return str(model_dir)
+
+        # 2. If running from PyInstaller bundle, use bundled models
         if getattr(sys, "frozen", False):
             bundle_dir = Path(sys._MEIPASS)  # type: ignore
             bundled_models = bundle_dir / "models_cache" / "sherpa-onnx"
             if bundled_models.exists():
                 return str(bundled_models)
 
-        return self._model_dir
+        # 3. Legacy path
+        legacy = _legacy_model_dir()
+        if legacy.exists():
+            return str(legacy)
+
+        # 4. Fallback
+        return self._model_dir or str(legacy)
 
     def is_downloading(self) -> bool:
         """Check if model is currently being downloaded."""
@@ -178,6 +209,38 @@ class ASREngine:
             if self._recognizer is not None:
                 self._recognizer = None
                 self._load_model_sync()
+
+    async def set_model(self, model_id: str) -> None:
+        """Switch to a different registered model, reloading if needed."""
+        entry = self._registry.get_model(model_id)
+        if entry is None or not entry.installed:
+            raise ValueError(f"Model not installed: {model_id}")
+        async with self._model_lock:
+            self._recognizer = None
+            self._vad_config = None
+            self._model_dir = str(entry.model_dir())
+            await asyncio.to_thread(self._load_model_sync)
+
+    def get_model_info(self) -> dict:
+        """Return info about the currently active model."""
+        active = self._registry.get_active()
+        if active:
+            return {
+                "id": active.id,
+                "name": active.name,
+                "version": active.version,
+                "engine": active.engine,
+                "installed": active.installed,
+                "path": str(active.model_dir()),
+            }
+        return {
+            "id": "unknown",
+            "name": "未找到模型",
+            "version": "",
+            "engine": "sherpa-onnx",
+            "installed": False,
+            "path": self.get_model_cache_dir(),
+        }
 
     def _report_download_progress(
         self, stage: str, progress: float, message: str
@@ -200,6 +263,9 @@ class ASREngine:
                 self._download_progress = 1.0
                 self._download_message = "模型已加载"
                 return
+
+            # Try importing legacy models on first run
+            self._registry.import_legacy()
 
             self._model_downloading = True
             try:
@@ -248,7 +314,7 @@ class ASREngine:
         # Check bundled location first (PyInstaller), then default cache
         vad_path = os.path.join(model_dir, "silero_vad.onnx")
         if not os.path.exists(vad_path):
-            vad_path = DEFAULT_VAD_MODEL
+            vad_path = str(_legacy_vad_path())
         if os.path.exists(vad_path):
             self._vad_config = sherpa_onnx.VadModelConfig(
                 silero_vad=sherpa_onnx.SileroVadModelConfig(
