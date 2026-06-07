@@ -23,11 +23,12 @@ import zipfile
 from pathlib import Path
 
 # SenseVoice model download URLs
+# Latest: 2025-09-09 (enhanced Cantonese support)
 # Primary: tar.bz2 (smaller, for Unix systems)
 # Fallback: zip (for Windows compatibility)
-MODEL_URL_BZ2 = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2"
-MODEL_URL_ZIP = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.zip"
-MODEL_NAME = "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17"
+MODEL_URL_BZ2 = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2"
+MODEL_URL_ZIP = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.zip"
+MODEL_NAME = "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09"
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -288,7 +289,7 @@ def update_model_registry(model_dir: Path, model_id: str = "sensevoice-int8") ->
     model_entry = {
         "id": model_id,
         "name": "SenseVoice INT8" if model_id == "sensevoice-int8" else model_id,
-        "version": "2024-07-17",
+        "version": "2025-09-09",
         "engine": "sherpa-onnx",
         "engine_version": "1.12.28",
         "files": files,

@@ -70,7 +70,7 @@ def generate_manifest(
             "dir_name": "sensevoice-int8",
             "download_url": (
                 "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
-                "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2"
+                "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2"
             ),
         },
         {

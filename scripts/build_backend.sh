@@ -25,7 +25,15 @@ mkdir -p "$BUILD_OUTPUT_DIR"
 
 # Prepare models cache directory (only INT8 model + tokens)
 MODELS_CACHE="$ROOT_DIR/models_cache/sherpa-onnx"
+
+# Check both old and new model locations
 SHERPA_MODEL_SRC="$HOME/.cache/sherpa-onnx/sense-voice"
+ECHO_SMITH_MODEL_SRC="$HOME/Library/Application Support/EchoSmith/models/sensevoice-int8"
+
+if [ -d "$ECHO_SMITH_MODEL_SRC" ]; then
+  echo "Found EchoSmith models at: $ECHO_SMITH_MODEL_SRC"
+  SHERPA_MODEL_SRC="$ECHO_SMITH_MODEL_SRC"
+fi
 
 if [ -d "$SHERPA_MODEL_SRC" ]; then
   echo "Found sherpa-onnx models at: $SHERPA_MODEL_SRC"
@@ -36,7 +44,11 @@ if [ -d "$SHERPA_MODEL_SRC" ]; then
   cp "$SHERPA_MODEL_SRC/tokens.txt" "$MODELS_CACHE/"
   # Copy Silero VAD model if available
   SILERO_VAD="$HOME/.cache/sherpa-onnx/silero_vad.onnx"
-  if [ -f "$SILERO_VAD" ]; then
+  SILERO_VAD_NEW="$HOME/Library/Application Support/EchoSmith/models/silero-vad/silero_vad.onnx"
+  if [ -f "$SILERO_VAD_NEW" ]; then
+    cp "$SILERO_VAD_NEW" "$MODELS_CACHE/"
+    echo "Copied Silero VAD model from EchoSmith models dir"
+  elif [ -f "$SILERO_VAD" ]; then
     cp "$SILERO_VAD" "$MODELS_CACHE/"
     echo "Copied Silero VAD model"
   else
@@ -180,6 +192,8 @@ pyinstaller \
   --hidden-import asr_engine \
   --hidden-import task_store \
   --hidden-import url_downloader \
+  --hidden-import model_registry \
+  --hidden-import model_updater \
   --hidden-import certifi \
   --collect-all sherpa_onnx \
   $ADD_DATA_ARGS \
