@@ -25,20 +25,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 try:
-    from asr_engine import ASREngine
     from model_registry import get_registry
     from model_updater import (
         check_updates,
         download_model,
         import_local_model,
     )
-    from task_store import TaskRecord, TaskStatus, task_store
     from url_downloader import (
         download_audio,
         download_media,
         extract_url_from_text,
         extract_video_title,
     )
+
+    from asr_engine import ASREngine
+    from task_store import TaskRecord, TaskStatus, task_store
 except ImportError:
     from .asr_engine import ASREngine
     from .model_registry import get_registry
