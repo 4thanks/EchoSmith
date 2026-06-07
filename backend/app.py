@@ -25,20 +25,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 try:
-    from asr_engine import ASREngine
     from model_registry import get_registry
     from model_updater import (
         check_updates,
         download_model,
         import_local_model,
     )
-    from task_store import TaskRecord, TaskStatus, task_store
     from url_downloader import (
         download_audio,
         download_media,
         extract_url_from_text,
         extract_video_title,
     )
+
+    from asr_engine import ASREngine
+    from task_store import TaskRecord, TaskStatus, task_store
 except ImportError:
     from .asr_engine import ASREngine
     from .model_registry import get_registry
@@ -103,10 +104,13 @@ async def healthcheck() -> JSONResponse:
         debug_info["bundle_dir"] = str(bundle_dir)
         debug_info["ffmpeg_bin_exists"] = bundled_ffmpeg_dir.exists()
         if bundled_ffmpeg_dir.exists():
-            debug_info["ffmpeg_bin_contents"] = [f.name for f in bundled_ffmpeg_dir.iterdir()]
+            debug_info["ffmpeg_bin_contents"] = [
+                f.name for f in bundled_ffmpeg_dir.iterdir()
+            ]
 
     try:
         import yt_dlp as _yt_dlp  # noqa: F401
+
         ytdlp_ok = True
     except ImportError:
         ytdlp_ok = False
@@ -151,10 +155,12 @@ async def list_models(_: None = Depends(verify_token)) -> JSONResponse:
     """List all registered models."""
     registry = get_registry()
     models = registry.list_models()
-    return JSONResponse({
-        "models": [m.to_dict() for m in models],
-        "active_id": next((m.id for m in models if m.active), None),
-    })
+    return JSONResponse(
+        {
+            "models": [m.to_dict() for m in models],
+            "active_id": next((m.id for m in models if m.active), None),
+        }
+    )
 
 
 @app.post("/api/models/activate")
@@ -196,10 +202,12 @@ async def import_model(
 
     try:
         entry = import_local_model(model_id, source_dir, version=version)
-        return JSONResponse({
-            "status": "imported",
-            "model": entry.to_dict(),
-        })
+        return JSONResponse(
+            {
+                "status": "imported",
+                "model": entry.to_dict(),
+            }
+        )
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -236,10 +244,12 @@ async def download_model_update(
         registry = get_registry()
         if not any(m.active for m in registry.list_models()):
             registry.activate(model_id)
-        return JSONResponse({
-            "status": "downloaded",
-            "model": entry.to_dict(),
-        })
+        return JSONResponse(
+            {
+                "status": "downloaded",
+                "model": entry.to_dict(),
+            }
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
@@ -402,7 +412,11 @@ async def delete_task(task_id: str, _: None = Depends(verify_token)) -> JSONResp
 
     # Delete the uploaded file if it exists (but not user's original local files)
     source_path = record.source.get("path")
-    if source_path and record.source.get("type") != "local" and Path(source_path).exists():
+    if (
+        source_path
+        and record.source.get("type") != "local"
+        and Path(source_path).exists()
+    ):
         try:
             Path(source_path).unlink()
         except Exception:
@@ -559,13 +573,18 @@ async def _run_task(task_id: str, source_info: dict, cleanup_paths: list[str]) -
         else:
             audio_path = Path(source_info["path"])
 
-        await task_store.update_task(task_id, message="转写中", progress=0.05 if source_info.get("type") != "url" else 0.30)
+        await task_store.update_task(
+            task_id,
+            message="转写中",
+            progress=0.05 if source_info.get("type") != "url" else 0.30,
+        )
 
         # Apply language setting from task
         await engine.set_language(source_info.get("language", "zh"))
 
         # For URL tasks, map transcription progress from 0.3 to 1.0
         if source_info.get("type") == "url":
+
             def url_progress_cb(progress: float, stage: str, partial: str) -> None:
                 mapped_progress = 0.3 + progress * 0.7
                 progress_cb(mapped_progress, stage, partial)
@@ -610,6 +629,7 @@ async def _run_task(task_id: str, source_info: dict, cleanup_paths: list[str]) -
                 return
     except Exception as exc:  # noqa: BLE001
         import traceback
+
         print(f"[TASK ERROR] {task_id}: {exc}", flush=True)
         traceback.print_exc()
         updated = await task_store.update_task(
@@ -860,6 +880,8 @@ async def download_media_endpoint(
             result = task.result()
             yield _json.dumps({"type": "done", **result}, ensure_ascii=False) + "\n"
         except Exception as exc:
-            yield _json.dumps({"type": "error", "detail": str(exc)}, ensure_ascii=False) + "\n"
+            yield _json.dumps(
+                {"type": "error", "detail": str(exc)}, ensure_ascii=False
+            ) + "\n"
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")

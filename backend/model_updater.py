@@ -90,7 +90,9 @@ def fetch_manifest(url: str = DEFAULT_MANIFEST_URL) -> dict[str, Any]:
         raise RuntimeError(f"Failed to fetch manifest from {url}: {e}") from e
 
 
-def check_updates(remote_manifest: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def check_updates(
+    remote_manifest: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Check for available model updates.
 
     Returns a list of models with available updates.
@@ -159,15 +161,19 @@ def download_model(
         # Extract
         if is_tar:
             import tarfile
+
             with tarfile.open(str(archive_path), "r:bz2") as tar:
                 tar.extractall(str(tmp_dir))
         elif is_zip:
             import zipfile
+
             with zipfile.ZipFile(str(archive_path), "r") as zf:
                 zf.extractall(str(tmp_dir))
         else:
             # Single file download (e.g. silero_vad.onnx)
-            shutil.copy2(str(archive_path), str(model_dir / model_id.replace("-", "_") + ".onnx"))
+            shutil.copy2(
+                str(archive_path), str(model_dir / model_id.replace("-", "_") + ".onnx")
+            )
             _finish_install(model_id, version, model_dir, progress_cb)
             return registry.get_model(model_id)  # type: ignore
 
@@ -183,11 +189,13 @@ def download_model(
             src = extracted / fname
             if src.exists():
                 shutil.copy2(str(src), str(model_dir / fname))
-                files.append(ModelFile(
-                    filename=fname,
-                    sha256=sha256_file(model_dir / fname),
-                    size_bytes=(model_dir / fname).stat().st_size,
-                ))
+                files.append(
+                    ModelFile(
+                        filename=fname,
+                        sha256=sha256_file(model_dir / fname),
+                        size_bytes=(model_dir / fname).stat().st_size,
+                    )
+                )
 
         # Compute overall checksum
         checksum = sha256_directory(model_dir, [f.filename for f in files])
@@ -246,11 +254,13 @@ def _finish_install(
     files = []
     for fname in model_dir.iterdir():
         if fname.is_file():
-            files.append(ModelFile(
-                filename=fname.name,
-                sha256=sha256_file(fname),
-                size_bytes=fname.stat().st_size,
-            ))
+            files.append(
+                ModelFile(
+                    filename=fname.name,
+                    sha256=sha256_file(fname),
+                    size_bytes=fname.stat().st_size,
+                )
+            )
     checksum = sha256_directory(model_dir, [f.filename for f in files])
     entry = ModelEntry(
         id=model_id,
@@ -308,11 +318,13 @@ def import_local_model(
         src_file = src / fname
         if src_file.exists():
             shutil.copy2(str(src_file), str(model_dir / fname))
-            files.append(ModelFile(
-                filename=fname,
-                sha256=sha256_file(model_dir / fname),
-                size_bytes=(model_dir / fname).stat().st_size,
-            ))
+            files.append(
+                ModelFile(
+                    filename=fname,
+                    sha256=sha256_file(model_dir / fname),
+                    size_bytes=(model_dir / fname).stat().st_size,
+                )
+            )
 
     checksum = sha256_directory(model_dir, [f.filename for f in files])
 

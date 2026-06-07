@@ -42,6 +42,7 @@ LEGACY_MODEL_DIR = Path.home() / ".cache" / "sherpa-onnx" / "sense-voice"
 @dataclass
 class ModelFile:
     """A single model file with metadata."""
+
     filename: str
     sha256: str = ""
     size_bytes: int = 0
@@ -50,6 +51,7 @@ class ModelFile:
 @dataclass
 class ModelEntry:
     """A registered model version."""
+
     id: str
     name: str
     version: str
@@ -178,6 +180,7 @@ class ModelRegistry:
         if path:
             entry.path = str(path)
         import time
+
         entry.installed_at = time.time()
         self._save()
 
@@ -206,21 +209,25 @@ class ModelRegistry:
             remote_version = remote_model.get("version", "")
             local = self._models.get(model_id)
             if local is None:
-                updates.append({
-                    "id": model_id,
-                    "name": remote_model.get("name", model_id),
-                    "current_version": None,
-                    "remote_version": remote_version,
-                    "status": "new",
-                })
+                updates.append(
+                    {
+                        "id": model_id,
+                        "name": remote_model.get("name", model_id),
+                        "current_version": None,
+                        "remote_version": remote_version,
+                        "status": "new",
+                    }
+                )
             elif local.version != remote_version:
-                updates.append({
-                    "id": model_id,
-                    "name": remote_model.get("name", model_id),
-                    "current_version": local.version,
-                    "remote_version": remote_version,
-                    "status": "update_available",
-                })
+                updates.append(
+                    {
+                        "id": model_id,
+                        "name": remote_model.get("name", model_id),
+                        "current_version": local.version,
+                        "remote_version": remote_version,
+                        "status": "update_available",
+                    }
+                )
         return updates
 
     def import_legacy(self) -> bool:
@@ -246,10 +253,12 @@ class ModelRegistry:
         for fname in ["model.int8.onnx", "tokens.txt", "model.onnx", "silero_vad.onnx"]:
             fp = model_dir / fname
             if fp.exists():
-                files.append(ModelFile(
-                    filename=fname,
-                    size_bytes=fp.stat().st_size,
-                ))
+                files.append(
+                    ModelFile(
+                        filename=fname,
+                        size_bytes=fp.stat().st_size,
+                    )
+                )
 
         entry = ModelEntry(
             id="sensevoice-int8",

@@ -63,6 +63,7 @@ def _legacy_vad_path() -> Path:
         return Path.home() / ".cache" / "sherpa-onnx" / "silero_vad.onnx"
     return Path.home() / ".cache" / "sherpa-onnx" / "silero_vad.onnx"
 
+
 # Model download progress callback
 ModelDownloadCallback = Callable[[str, float, str], None]
 
@@ -85,6 +86,7 @@ class TranscriptionResult:
 @dataclass
 class SpeechRegion:
     """Copied speech data from VAD (safe after vad.pop())."""
+
     start_sample: int
     samples: np.ndarray  # float32 numpy array (NOT Python list)
 
@@ -121,6 +123,7 @@ class ASREngine:
         """
         try:
             import subprocess as _sp
+
             out = _sp.check_output(
                 ["sysctl", "-n", "hw.perflevel0.logicalcpu"], text=True
             ).strip()
@@ -354,6 +357,7 @@ class ASREngine:
             return True
         if pause_event is not None:
             import time
+
             while not pause_event.is_set():
                 if cancelled_checker and cancelled_checker():
                     return True
@@ -372,7 +376,9 @@ class ASREngine:
         so we must copy start + samples before calling pop().
         """
         assert self._vad_config is not None
-        vad = sherpa_onnx.VoiceActivityDetector(self._vad_config, buffer_size_in_seconds=600)
+        vad = sherpa_onnx.VoiceActivityDetector(
+            self._vad_config, buffer_size_in_seconds=600
+        )
         window = self._vad_config.silero_vad.window_size
         total = len(samples)
         last_pct = -1
@@ -394,10 +400,12 @@ class ASREngine:
         regions: list[SpeechRegion] = []
         while not vad.empty():
             seg = vad.front
-            regions.append(SpeechRegion(
-                start_sample=int(seg.start),
-                samples=np.array(seg.samples, dtype=np.float32),
-            ))
+            regions.append(
+                SpeechRegion(
+                    start_sample=int(seg.start),
+                    samples=np.array(seg.samples, dtype=np.float32),
+                )
+            )
             vad.pop()
         return regions
 
@@ -429,11 +437,21 @@ class ASREngine:
             # Use VAD if available, otherwise fall back to fixed chunking
             if self._vad_config is not None:
                 return self._transcribe_with_vad(
-                    samples, sample_rate, duration_ms, progress_cb, pause_event, cancelled_checker
+                    samples,
+                    sample_rate,
+                    duration_ms,
+                    progress_cb,
+                    pause_event,
+                    cancelled_checker,
                 )
 
             return self._transcribe_fixed_chunks(
-                samples, sample_rate, duration_ms, progress_cb, pause_event, cancelled_checker
+                samples,
+                sample_rate,
+                duration_ms,
+                progress_cb,
+                pause_event,
+                cancelled_checker,
             )
         finally:
             if wav_path != audio_path and wav_path.exists():
@@ -454,7 +472,9 @@ class ASREngine:
         if progress_cb:
             progress_cb(0.12, "语音检测中", "")
 
-        speech_segments = self._detect_speech_segments(samples, sample_rate, progress_cb)
+        speech_segments = self._detect_speech_segments(
+            samples, sample_rate, progress_cb
+        )
 
         if not speech_segments:
             if progress_cb:
@@ -497,12 +517,14 @@ class ASREngine:
                 s_end = cursor_ms + int(seg_duration_ms * proportion)
                 if s_idx == len(sentences) - 1:
                     s_end = end_ms
-                all_segments.append(Segment(
-                    index=len(all_segments),
-                    start_ms=cursor_ms,
-                    end_ms=s_end,
-                    text=sentence,
-                ))
+                all_segments.append(
+                    Segment(
+                        index=len(all_segments),
+                        start_ms=cursor_ms,
+                        end_ms=s_end,
+                        text=sentence,
+                    )
+                )
                 cursor_ms = s_end
 
         final_text = " ".join(all_texts).strip()
@@ -510,7 +532,9 @@ class ASREngine:
         if progress_cb:
             progress_cb(1.0, "完成", final_text)
 
-        return TranscriptionResult(text=final_text, segments=all_segments, duration_ms=duration_ms)
+        return TranscriptionResult(
+            text=final_text, segments=all_segments, duration_ms=duration_ms
+        )
 
     def _transcribe_fixed_chunks(
         self,
@@ -542,7 +566,11 @@ class ASREngine:
 
             progress = 0.1 + 0.8 * (chunk_idx / num_chunks)
             if progress_cb:
-                progress_cb(progress, f"转写中 {chunk_idx + 1}/{num_chunks}", " ".join(all_texts))
+                progress_cb(
+                    progress,
+                    f"转写中 {chunk_idx + 1}/{num_chunks}",
+                    " ".join(all_texts),
+                )
 
             stream = self._recognizer.create_stream()
             stream.accept_waveform(sample_rate, chunk_samples)
@@ -564,7 +592,9 @@ class ASREngine:
         if progress_cb:
             progress_cb(1.0, "完成", final_text)
 
-        return TranscriptionResult(text=final_text, segments=all_segments, duration_ms=duration_ms)
+        return TranscriptionResult(
+            text=final_text, segments=all_segments, duration_ms=duration_ms
+        )
 
     def _ensure_wav_format(self, audio_path: Path) -> Path:
         """Convert audio to 16kHz mono WAV if needed."""
